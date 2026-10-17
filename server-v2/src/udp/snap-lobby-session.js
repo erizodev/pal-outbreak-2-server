@@ -323,6 +323,7 @@ export class SnapLobbySession {
   #roomCapacity;
   /** The room this session created, if any. Diagnostics and the follow-up pushes. */
   #createdRoom = null;
+  #hostSeatPending = false;
 
   constructor({
     routingKey,
@@ -469,7 +470,7 @@ export class SnapLobbySession {
     memberIdToken = false,
     /* SNAP_ROSTER_TO_JOINER (T19/seated-slot RE): op-06 each existing member to the joiner. */
     rosterToJoiner = false,
-    /* SNAP_HOST_RESEAT (T20): re-seat the host on join so the start roster counts 2. */
+    /* SNAP_HOST_RESEAT: repair the host seat on its first room query and on peer join. */
     hostReseat = false,
     /*
      * RS1-C C2, flag `SNAP_COUNT_PUSH` (config default ON; class default OFF):
@@ -2247,6 +2248,7 @@ export class SnapLobbySession {
         flags: FLAG_SET,
         event: 'member-list'
       });
+      if (answered) this.#reseatHostOnMemberQuery(room);
       this.#logger?.info?.('udp9090 lobby-member-list', {
         routingKey: this.#routingKey,
         loginIdentity: this.#loginIdentity,
@@ -2266,6 +2268,7 @@ export class SnapLobbySession {
       payload: buildMemberListPayload({ handleBytes: request.handleBytes, members }),
       event: 'member-list'
     });
+    if (answered) this.#reseatHostOnMemberQuery(room);
     this.#logger?.info?.('udp9090 lobby-member-list', {
       routingKey: this.#routingKey,
       loginIdentity: this.#loginIdentity,
@@ -2277,6 +2280,27 @@ export class SnapLobbySession {
         'DATA table at 0x6cdbe6, which is not the drawn roster'
     });
     return { opcode: message.opcode, answered, members: members.length };
+  }
+
+  /**
+   * The create-time op-06 can arrive while the client is still on screen 3,
+   * where FUN_005b5ac0 does not seat it. The 2026-10-17 solo savestates show an
+   * empty in-room roster followed by game peerCount=0. FUN_005fe500 sets screen
+   * 4 BEFORE sending this op-0a query via FUN_005c0a00, so replay the host's
+   * existing member record once here, under SNAP_HOST_RESEAT. No delay or new
+   * packet shape; the count-zero query response remains unchanged.
+   */
+  #reseatHostOnMemberQuery(room) {
+    if (!this.#hostSeatPending || room == null || this.#createdRoom?.handle !== room.handle ||
+        this.#presenceRecord.location().roomHandle !== room.handle) return;
+    if (!this.reseatSelf()) return;
+    this.#hostSeatPending = false;
+    this.#logger?.info?.('udp9090 lobby-host-seat-on-query', {
+      routingKey: this.#routingKey,
+      loginIdentity: this.#loginIdentity,
+      roomHandle: `0x${room.handle.toString(16)}`,
+      note: 'SNAP_HOST_RESEAT: one host member record after its first in-room member query'
+    });
   }
 
   /**
@@ -2450,7 +2474,10 @@ export class SnapLobbySession {
       everyRefusalMatters: true
     });
 
-    if (answered) this.#sendCreateFollowUps(room);
+    if (answered) {
+      this.#hostSeatPending = this.#hostReseat;
+      this.#sendCreateFollowUps(room);
+    }
 
     const level = answered ? this.#logger?.info : this.#logger?.warn;
     level?.call(this.#logger, 'udp9090 lobby-create-room', {
@@ -2696,6 +2723,7 @@ export class SnapLobbySession {
       // The registry closes an emptied room through presence's own hook, so this
       // only forgets the session's reference to it.
       this.#createdRoom = null;
+      this.#hostSeatPending = false;
     }
     if (this.#countPush && from.boxId != null &&
         this.#presenceRecord.location().boxId !== from.boxId) {

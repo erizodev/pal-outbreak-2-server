@@ -162,6 +162,15 @@ op-0x0F packets relayed byte-identical to room members except the sender, the
 bioserver gameserver default-branch; the fix for a joiner parked at "Game to
 begin shortly" while the host plays; rollback = unset).
 
+`SNAP_HOST_RESEAT` (default false) also supplies the creator's member record once
+after its first matching in-room member query. This repairs the case where the
+create-time record arrived before the client's seating handler accepted it;
+peer-join reseating remains enabled by the same flag. The 2026-10-17 PCSX2
+snapshots demonstrate an empty host roster and zero game peers. The repair is
+locally tested but awaits a client run; see
+[`pcsx2-solo-zero-peers-2026-10-17.md`](../../analysis/pcsx2-solo-zero-peers-2026-10-17.md).
+The new `udp9090 lobby-host-seat-on-query` event identifies the one-time replay.
+
 ### `PAL_V2_DYNAMIC_DNAS_TOKEN` - an experiment, off by default
 
 V2 replays canned DNAS replies, and one record in them carries the 32-byte

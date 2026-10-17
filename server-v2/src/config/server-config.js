@@ -390,6 +390,7 @@ export function loadServerConfig(env = process.env) {
       /* op-06 memberId = the recipient's token, so the host's accept scan matches. */
       memberIdToken: readBoolean(problems, env, 'SNAP_MEMBER_ID_TOKEN', false),
       rosterToJoiner: readBoolean(problems, env, 'SNAP_ROSTER_TO_JOINER', false),
+      /* Repair host seating on its first in-room member query and on peer join. */
       hostReseat: readBoolean(problems, env, 'SNAP_HOST_RESEAT', false),
       /*
        * PORT-PLAN slice 1b, the JOIN ladder: the DATA-clear room-ENTER op-0x06
@@ -584,7 +585,7 @@ export const CONFIGURATION_KEYS = Object.freeze({
     'SNAP_ROOM_STAT',             // op-0x49 +0x1c carries the create optionsWord so joiners see the scenario (default false)
     'SNAP_MEMBER_ID_TOKEN',       // op-06 memberId = recipient token, unblocks the 2-player game start (default false)
     'SNAP_ROSTER_TO_JOINER',      // push each existing member's op-06 to a joiner so its member list shows them (default false)
-    'SNAP_HOST_RESEAT',           // re-seat the host on join so the start roster counts 2 (non-solo start) (default false)
+    'SNAP_HOST_RESEAT',           // re-seat host once on its initial room query and on peer join (default false)
     /*
      * The PORT-PLAN slice 1b/2a/2b flags. The first two default ON (the stated
      * deviation from flags-start-OFF, by the owner's plan for the rig run) -
