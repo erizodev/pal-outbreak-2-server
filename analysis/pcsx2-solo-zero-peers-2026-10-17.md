@@ -1,5 +1,23 @@
 # PCSX2 solo reproduction: empty host roster, zero game peers
 
+## Latest result: gameplay succeeds; display-count refinement prepared
+
+The owner reports that the initial query-time replay fix allows solo gameplay.
+The client displayed two players despite one actual participant. This is
+consistent with `FUN_005bb4d0`: after dispatching the seating event, it increments
+`0x6cfb62` unconditionally, even if the event ignored or deduplicated the seat.
+The first patch supplied the host delta twice (at create and at the query).
+
+The follow-up defers the ORIGINAL host member delta until the first in-room
+query instead of replaying it. It omits the create-time delta only when
+HOST_RESEAT is enabled, preserving the proven late seating point. Further polls
+still do not emit it. The count-zero response and room-limits push are retained.
+An added regression asserts exactly one host JOIN over create and repeated
+queries; it fails with two on the first patch and passes with the refinement.
+The refined display count and continued gameplay still require a client run.
+
+The sections below preserve the original failing-run evidence and first repair.
+
 Owner test: PAL File #2, SLES-53319 / CRC A8505479, Wild Things, Alyssa.
 Files supplied on 2026-10-17:
 
@@ -94,7 +112,7 @@ possible mechanism; the snapshots alone do not show the exact losing instruction
 This also accounts for why a joining second client can repair the symptom:
 the existing HOST_RESEAT join path supplies the host record again in the room.
 
-## Minimal repair prepared locally
+## First repair (now superseded by the single-delta refinement above)
 
 Under the existing `SNAP_HOST_RESEAT` flag, replay the host member record once
 after successfully answering its first matching in-room member-list query.
@@ -111,7 +129,8 @@ needs client validation with this timing change.
 Regression test `server-v2/test/snap-lobby-host-seat-on-query.test.js` was added
 before the production edit: 2 failures on the original code, then all 5 tests
 passed after the repair. Full V2 `node --test --test-reporter=dot` passed on
-Node 24.16.0 / Windows. Actual gameplay remains UNVERIFIED with the repair.
+Node 24.16.0 / Windows. Gameplay was unverified at this point; the owner later
+confirmed that it works, as recorded above.
 
 ## Next run
 

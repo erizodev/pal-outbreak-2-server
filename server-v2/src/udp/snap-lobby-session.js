@@ -2286,9 +2286,10 @@ export class SnapLobbySession {
    * The create-time op-06 can arrive while the client is still on screen 3,
    * where FUN_005b5ac0 does not seat it. The 2026-10-17 solo savestates show an
    * empty in-room roster followed by game peerCount=0. FUN_005fe500 sets screen
-   * 4 BEFORE sending this op-0a query via FUN_005c0a00, so replay the host's
-   * existing member record once here, under SNAP_HOST_RESEAT. No delay or new
-   * packet shape; the count-zero query response remains unchanged.
+   * 4 BEFORE sending this op-0a query via FUN_005c0a00, so supply the deferred
+   * host member record once here, under SNAP_HOST_RESEAT. Do not also send it
+   * at create: FUN_005bb4d0 increments the displayed count even if seating was
+   * ignored. The count-zero query response remains unchanged.
    */
   #reseatHostOnMemberQuery(room) {
     if (!this.#hostSeatPending || room == null || this.#createdRoom?.handle !== room.handle ||
@@ -2299,7 +2300,7 @@ export class SnapLobbySession {
       routingKey: this.#routingKey,
       loginIdentity: this.#loginIdentity,
       roomHandle: `0x${room.handle.toString(16)}`,
-      note: 'SNAP_HOST_RESEAT: one host member record after its first in-room member query'
+      note: 'SNAP_HOST_RESEAT: one deferred host member record after its first in-room member query'
     });
   }
 
@@ -2598,30 +2599,35 @@ export class SnapLobbySession {
    *   a one-member room, and its own consumer is a different display.
    */
   #sendCreateFollowUps(room) {
-    const memberName = this.#loginIdentity.slice(0, 0x10);
-    this.#send({
-      opcode: LOBBY_OPCODE.MEMBER_JOIN,
-      subSelector: 0,
-      payload: buildMemberJoinPayload({
-        name: memberName,
-        memberId: room.handle,
-        // Distinct from a joiner's, so the client's dedup (`FUN_005b5ac0`) admits
-        // both rather than treating the second member as a repeat of the first.
-        characterId: 1,
-        // SNAP_CHARSTATS_SEED: the host's own captured op-0c so its self-seat
-        // renders the real character (its real char-id @+0xc8 also keeps the
-        // member distinct from the joiner's for the dedup, as long as they differ).
-        charstats: this.#charstatsSeed ? this.#charstatsBlob : null
-      }),
-      /*
-       * who = 0xA0: RELIABLE | SET with DATA deliberately CLEAR. `FUN_001d6988`
-       * routes on the DATA bit and the member-JOIN goes to slot 2; V1 shipped
-       * 0xA0 here and it is the form that populated the roster.
-       */
-      flags: FLAG_SET,
-      event: 'create-member-join',
-      everyRefusalMatters: true
-    });
+    // With HOST_RESEAT, the first in-room query supplies this delta instead.
+    // Replaying a create-time delta fixed the empty seat but counted the solo
+    // host twice: FUN_005bb4d0 accumulates before/after any seating dedup.
+    if (!this.#hostReseat) {
+      const memberName = this.#loginIdentity.slice(0, 0x10);
+      this.#send({
+        opcode: LOBBY_OPCODE.MEMBER_JOIN,
+        subSelector: 0,
+        payload: buildMemberJoinPayload({
+          name: memberName,
+          memberId: room.handle,
+          // Distinct from a joiner's, so the client's dedup (`FUN_005b5ac0`) admits
+          // both rather than treating the second member as a repeat of the first.
+          characterId: 1,
+          // SNAP_CHARSTATS_SEED: the host's own captured op-0c so its self-seat
+          // renders the real character (its real char-id @+0xc8 also keeps the
+          // member distinct from the joiner's for the dedup, as long as they differ).
+          charstats: this.#charstatsSeed ? this.#charstatsBlob : null
+        }),
+        /*
+         * who = 0xA0: RELIABLE | SET with DATA deliberately CLEAR. `FUN_001d6988`
+         * routes on the DATA bit and the member-JOIN goes to slot 2; V1 shipped
+         * 0xA0 here and it is the form that populated the roster.
+         */
+        flags: FLAG_SET,
+        event: 'create-member-join',
+        everyRefusalMatters: true
+      });
+    }
     this.#send({
       opcode: LOBBY_OPCODE.ROOM_STATE,
       subSelector: 0,

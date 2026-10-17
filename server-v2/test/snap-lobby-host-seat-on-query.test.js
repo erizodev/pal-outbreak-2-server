@@ -62,7 +62,7 @@ function harness(t, { hostReseat = true } = {}) {
 
 test('host self-seat is supplied after its first in-room query, with real character data', (t) => {
   const rig = harness(t);
-  assert.equal(rig.memberJoins(rig.sent).length, 1, 'historical create-time push is retained');
+  assert.equal(rig.memberJoins(rig.sent).length, 0, 'host member delta waits for screen 4');
 
   // The actual client may still be screen 3 during the initial push; only the
   // records sent after this in-room query can populate its screen-4 roster.
@@ -81,6 +81,15 @@ test('host self-seat is supplied after its first in-room query, with real charac
   assert.ok(reply);
   assert.deepEqual(reply.datagram.subarray(16, -4), Buffer.alloc(12), 'count-zero reply untouched');
   assert.ok(reply.datagram.readUInt32BE(8) < d.readUInt32BE(8), 'query response precedes the seat');
+});
+
+test('solo creation supplies exactly one host JOIN delta, including after repeated polls', (t) => {
+  const rig = harness(t);
+  rig.query();
+  rig.query();
+  // FUN_005bb4d0 increments the display count unconditionally, even if the
+  // seating event ignored an early record or deduplicated a repeated one.
+  assert.equal(rig.memberJoins(rig.sent).length, 1, 'one real member produces one JOIN delta');
 });
 
 test('a new member-list poll does not repeatedly push the host seat', (t) => {
@@ -103,6 +112,7 @@ test('an unrelated room query does not consume the host seat replay', (t) => {
 
 test('SNAP_HOST_RESEAT off keeps the original create/query wire behavior', (t) => {
   const rig = harness(t, { hostReseat: false });
+  assert.equal(rig.memberJoins(rig.sent).length, 1, 'flag off retains the create-time delta');
   const before = rig.sent.length;
   rig.query();
   assert.equal(rig.memberJoins(rig.sent.slice(before)).length, 0);

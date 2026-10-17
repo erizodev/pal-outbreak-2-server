@@ -525,10 +525,11 @@ const MEMBER_CHARACTER_ID_OFFSET = MEMBER_STATS_OFFSET + 0xc8;
  * is rendered verbatim and an EMPTY name is the client's free-row marker, so a
  * blank name here is not a cosmetic default - it draws nothing.
  *
- * This is a DELTA and the client ACCUMULATES on it (`0x6cfb62`, capped at 4), so
- * it may only ever be emitted from a transition, never from a poll handler. V1
- * shipped exactly that bug: it re-fired op-0x06 from inside the op-0x0a poll and
- * inflated the count on every poll (`game_udp_server.js:2117`, the T19 bug).
+ * This is a DELTA and the client ACCUMULATES on it (`0x6cfb62`, capped at 4),
+ * even when the seating event ignores or deduplicates the record. Emit it once
+ * per transition. A creator's initial delta may be deferred until its first
+ * in-room query, but must then be omitted at create and never repeated per
+ * poll. V1 repeated it on op-0x0a and inflated the count (`game_udp_server.js:2117`).
  */
 export function buildMemberJoinPayload({ name, memberId, characterId = 0, charstats = null }) {
   const encoded = Buffer.isBuffer(name) ? name : Buffer.from(String(name ?? ''), 'latin1');
