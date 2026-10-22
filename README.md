@@ -143,7 +143,65 @@ G13 follow-ups that don't re-open it: enemy movement is a little coarse between 
 
 **Requirements:** Node.js **22.5+** (persistence uses the built-in `node:sqlite`; on 22.5–22.12 it
 needs `--experimental-sqlite`, unflagged from 22.13 / 23.4). No third-party runtime dependencies,
-no build step.
+no build step. The Docker route below needs only Docker with the Compose plugin; Node runs inside
+the container.
+
+### Quick start: Docker (e.g. a Raspberry Pi)
+
+The repo ships a [`compose.yaml`](compose.yaml) that runs the full network service (DNS + DNAS +
+lobby + SN@P) with the rig-validated flag set. The image build fetches the PAL DNAS certificates
+and packets from [DNASrep](https://github.com/FogNo23/DNASrep) (`etc/dnas` → `/dnas/certs`,
+`www/dnas/eu-gw/packets` → `/dnas/packets`), so there is nothing to copy by hand.
+
+1. **Install Docker** on the host (Raspberry Pi OS: `curl -fsSL https://get.docker.com | sh`, then
+   `sudo usermod -aG docker $USER` and log in again).
+2. **Clone the repo and create `.env`:**
+
+   ```sh
+   git clone https://github.com/Koosjuh/pal-outbreak-2-server
+   cd pal-outbreak-2-server
+   sh docker/init-env.sh            # copies .env.example to .env with HOST_IP = this machine's LAN IP
+   ```
+
+   If the detected address is wrong (or the host has several), pass it explicitly:
+   `sh docker/init-env.sh 192.168.1.50`. Every IP in `.env` derives from `HOST_IP`, so that one
+   line is all you change if the address moves. Give the host a fixed IP (DHCP reservation) —
+   the console has to find it at the same address every time.
+3. **Generate the master key** and put it in `.env`:
+
+   ```sh
+   openssl rand -hex 32
+   ```
+
+   Paste the output after `PAL_V2_MASTER_KEY=` in `.env`. Generate it **once and keep a copy
+   somewhere safe**: it seals the stored account secrets, so changing or losing it loses every
+   account. Never commit it (`.env` is git-ignored). Without `openssl`, this works too:
+   `head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'`.
+4. **Optionally** set `PAL_V2_LOBBY_NAME` and `PAL_V2_WELCOME_MESSAGE` in `.env`.
+5. **Build and start:**
+
+   ```sh
+   docker compose up -d --build
+   docker compose logs -f            # watch startup; Ctrl+C stops following, not the server
+   ```
+
+6. **Point the console's DNS** (PS2 network settings, or PCSX2's DNS) at `HOST_IP` and boot the
+   game. The server answers the records in [DNS records](#dns-records) itself.
+
+Notes:
+
+- The container uses **host networking**: the client drops SN@P datagrams whose source address
+  isn't the IP it dialed, and DNS/DNAS must answer on the host's own address. Nothing else on
+  the host may be listening on ports **53** or **443** — stop any local DNS resolver (dnsmasq,
+  Pi-hole, systemd-resolved stub) and any earlier systemd `pal-server-v2` service first.
+- The server-select directory is generated on first start at `config/directory.json`, pointing at
+  `HOST_IP`. Edit it freely; it is never overwritten. If `HOST_IP` changes, delete it so it is
+  regenerated. A `directory-is-rig-fixture` warning at startup is expected for this generated file.
+- Accounts live in the `pal-data` Docker volume and survive rebuilds. `docker compose down -v`
+  **deletes them**.
+- Update: `git pull && docker compose up -d --build`. Stop: `docker compose down`.
+
+The manual (non-Docker) setup follows.
 
 ### 1. Run the test suite (no game needed)
 

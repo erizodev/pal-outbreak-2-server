@@ -12,3 +12,8 @@
 
 # Pi systemd env drop-ins are applied on Linux — pin to LF.
 /deploy/pi-env.d/** text eol=lf
+
+# Docker files run inside the Linux container / on the Pi — pin to LF.
+/docker/** text eol=lf
+/compose.yaml text eol=lf
+/.env.example text eol=lf

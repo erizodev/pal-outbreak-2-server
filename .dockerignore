@@ -1,0 +1,8 @@
+# The image only needs the V2 server and the docker/ scripts; the rest of the repo
+# (RE material, captures, binaries) stays out of the build context.
+*
+!server-v2/
+!docker/
+server-v2/test/
+server-v2/audit/
+**/node_modules/

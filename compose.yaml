@@ -1,0 +1,33 @@
+# PAL Outbreak File #2 server V2 on the Raspberry Pi.
+#
+#   sh docker/init-env.sh      # once: creates .env with this machine's LAN IP
+#   (edit .env, fill PAL_V2_MASTER_KEY)
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# Host networking is required, not a convenience: the console discards SN@P datagrams whose
+# source address isn't the IP it dialed (PAL_V2_UDP_BIND_ADDRESS), and DNS (53) / DNAS (443)
+# must answer on the Pi's own address. Nothing else on the Pi may hold ports 53 or 443.
+services:
+  pal-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: pal-outbreak-2-server:latest
+    container_name: pal-server-v2
+    network_mode: host
+    env_file: .env
+    volumes:
+      - pal-data:/data          # account store (sealed with PAL_V2_MASTER_KEY)
+      - ./config:/config        # directory.json, generated on first start, editable
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"         # debug logging on an SD card - cap it
+        max-file: "3"
+
+volumes:
+  pal-data:
