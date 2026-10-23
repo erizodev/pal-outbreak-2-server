@@ -12,7 +12,10 @@ import { SnapLobbySessions } from '../src/udp/snap-lobby-sessions.js';
  * absolute (FUN_005bc0e0 copies max/current into 0x6ff2b4/0x6ff2b3), taken only
  * in-room, and 0x6ff2b4 is zeroed on every screen rebuild - so the create-time
  * push is lost. The in-room op-0a query follows the screen-4 rebuild, so the
- * header is re-asserted there, from presence.
+ * header is re-asserted there, from presence - ONCE, for the creator only.
+ * The first version re-sent it on every poll; 0x6ff2b3 is also the host's
+ * accepted-member count, and the rig run lost the ability to join until the
+ * flag was removed.
  */
 
 const HEADER = 0x10;
@@ -104,14 +107,14 @@ test('solo host: the in-room member query re-asserts "1 of 4" after the member-l
   queryMembers(host, handle);
   const after = host.sent.slice(before);
   const limits = roomLimits(after);
-  assert.equal(limits.length, 1, 'one header per in-room query');
+  assert.equal(limits.length, 1, 'one header on the first in-room query');
   assert.deepEqual({ max: limits[0].max, current: limits[0].current }, { max: 4, current: 1 });
   assert.equal(limits[0].who, 0xa000, 'room channel, DATA clear - the create-time header shape');
   const reply = after.find((e) => e.datagram[3] === LOBBY_OPCODE.MEMBER_LIST);
   assert.ok(reply.datagram.readUInt32BE(8) < limits[0].sequence, 'query reply first');
 });
 
-test('the header is absolute: repeated polls keep re-asserting the same count', (t) => {
+test('repeated polls never re-send it: one header per created room', (t) => {
   const rig = harness(t);
   const host = rig.open('192.0.2.76:2000', 'host', HOST_TOKEN);
   enter(host);
@@ -120,12 +123,12 @@ test('the header is absolute: repeated polls keep re-asserting the same count', 
   queryMembers(host, handle);
   queryMembers(host, handle);
   queryMembers(host, handle);
-  const limits = roomLimits(host.sent, before);
-  assert.equal(limits.length, 3);
-  assert.ok(limits.every((l) => l.max === 4 && l.current === 1), 'never accumulates');
+  assert.equal(roomLimits(host.sent, before).length, 1);
 });
 
-test('two players: both consoles get "2 of 4" from presence on their in-room query', (t) => {
+test('two players: polls after a join add no header beyond the join path\'s own', (t) => {
+  // Regression for the 2026-10-22 rig run: per-poll headers overwrote the
+  // host's accepted-member count 0x6ff2b3 and the joiner could not get in.
   const rig = harness(t);
   const host = rig.open('192.0.2.76:2000', 'host', HOST_TOKEN);
   const joiner = rig.open('192.0.2.77:2000', 'joiner', JOINER_TOKEN);
@@ -133,15 +136,46 @@ test('two players: both consoles get "2 of 4" from presence on their in-room que
   const handle = createRoom(host);
   queryMembers(host, handle);
   enter(joiner);
+
+  const atJoin = host.sent.length;
   joinRoom(joiner, handle);
+  const fromJoin = roomLimits(host.sent, atJoin);
+  assert.deepEqual(fromJoin.map((l) => [l.current, l.max]), [[2, 4]],
+    'the existing join fan-out header, unchanged');
 
-  const atHost = host.sent.length;
+  const atHostPoll = host.sent.length;
   queryMembers(host, handle);
-  assert.deepEqual(roomLimits(host.sent, atHost).map((l) => [l.current, l.max]), [[2, 4]]);
+  queryMembers(host, handle);
+  assert.equal(roomLimits(host.sent, atHostPoll).length, 0, 'host polls stay silent');
 
-  const atJoiner = joiner.sent.length;
+  const atJoinerPoll = joiner.sent.length;
   queryMembers(joiner, handle);
-  assert.deepEqual(roomLimits(joiner.sent, atJoiner).map((l) => [l.current, l.max]), [[2, 4]]);
+  assert.equal(roomLimits(joiner.sent, atJoinerPoll).length, 0, 'joiner did not create the room');
+});
+
+test('a host that creates a second room gets one header for it as well', (t) => {
+  const rig = harness(t);
+  const host = rig.open('192.0.2.76:2000', 'host', HOST_TOKEN);
+  enter(host);
+  const first = createRoom(host);
+  queryMembers(host, first);
+  host.send(LOBBY_OPCODE.AREA_LEAVE, Buffer.alloc(0), 0xa000);
+  const second = createRoom(host);
+  const before = host.sent.length;
+  queryMembers(host, second);
+  queryMembers(host, second);
+  assert.equal(roomLimits(host.sent, before).length, 1);
+});
+
+test('a host that left gets no header by querying its old room', (t) => {
+  const rig = harness(t);
+  const host = rig.open('192.0.2.76:2000', 'host', HOST_TOKEN);
+  enter(host);
+  const handle = createRoom(host);
+  host.send(LOBBY_OPCODE.AREA_LEAVE, Buffer.alloc(0), 0xa000);
+  const before = host.sent.length;
+  queryMembers(host, handle);
+  assert.equal(roomLimits(host.sent, before).length, 0);
 });
 
 test('a selection query from outside the room gets no header', (t) => {

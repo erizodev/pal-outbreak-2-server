@@ -325,6 +325,7 @@ export class SnapLobbySession {
   /** The room this session created, if any. Diagnostics and the follow-up pushes. */
   #createdRoom = null;
   #hostSeatPending = false;
+  #roomLimitsPending = false;
 
   constructor({
     routingKey,
@@ -2315,22 +2316,25 @@ export class SnapLobbySession {
   }
 
   /**
-   * Re-assert the op-0x10 sub-5 "MAX / CURRENT P" header (SNAP_ROOM_LIMITS_ON_QUERY).
+   * Re-assert the op-0x10 sub-5 "MAX / CURRENT P" header ONCE, on the creator's
+   * first in-room member query (SNAP_ROOM_LIMITS_ON_QUERY).
    *
-   * The header is ABSOLUTE - FUN_005bc0e0 copies max/current straight into
-   * 0x6ff2b4/0x6ff2b3 - so repeating it cannot accumulate the way the op-06
-   * JOIN delta does. It is only taken while 0x6ff2b1 says in-room, and the
-   * client zeroes 0x6ff2b4 on every screen rebuild; the create-time push lands
-   * while the creator is still on screen 3, which fits the "1 of 0" / "3 of 0"
-   * the owner saw on 2026-10-22. FUN_005fe500 sets screen 4 BEFORE sending this
-   * op-0a, so a header sent here arrives after the rebuild, in-room. Counts come
-   * from presence, never from a counter, so the value is always the live one.
-   * Only for a session actually IN the queried room - a joiner's selection query
-   * from the room list gets nothing extra.
+   * FUN_005bc0e0 copies max/current straight into 0x6ff2b4/0x6ff2b3, only while
+   * 0x6ff2b1 says in-room, and the client zeroes 0x6ff2b4 on every screen
+   * rebuild; the create-time push lands while the creator is still on screen 3,
+   * which fits the "1 of 0" the owner saw on 2026-10-22. FUN_005fe500 sets
+   * screen 4 BEFORE sending this op-0a, so a header sent here arrives in-room.
+   *
+   * ONE-SHOT, NOT PER POLL - rig-proven 2026-10-22. 0x6ff2b3 is also the host
+   * start SM's accepted-member count (0x6ff2b5[i] -> 0x6ff2b3 >= 2 = non-solo).
+   * Re-sending the header on every op-0a poll overwrote it under the accept
+   * handshake: the joiner saw the room but could no longer join. Removing the
+   * flag restored joining. The join path's own header push is untouched.
    */
   #refreshRoomLimitsOnMemberQuery(room) {
-    if (!this.#roomLimitsOnQuery || room == null ||
+    if (!this.#roomLimitsPending || room == null || this.#createdRoom?.handle !== room.handle ||
         this.#presenceRecord.location().roomHandle !== room.handle) return;
+    this.#roomLimitsPending = false;
     const current = this.#presence.countInRoom(room.handle);
     const sent = this.#send({
       opcode: LOBBY_OPCODE.ROOM_STATE,
@@ -2346,7 +2350,7 @@ export class SnapLobbySession {
       max: room.max,
       current,
       sent,
-      note: 'SNAP_ROOM_LIMITS_ON_QUERY: absolute sub-5 header re-asserted after the screen-4 rebuild'
+      note: 'SNAP_ROOM_LIMITS_ON_QUERY: one sub-5 header after the creator\'s first in-room query'
     });
   }
 
@@ -2523,6 +2527,7 @@ export class SnapLobbySession {
 
     if (answered) {
       this.#hostSeatPending = this.#hostReseat;
+      this.#roomLimitsPending = this.#roomLimitsOnQuery;
       this.#sendCreateFollowUps(room);
     }
 
@@ -2776,6 +2781,7 @@ export class SnapLobbySession {
       // only forgets the session's reference to it.
       this.#createdRoom = null;
       this.#hostSeatPending = false;
+      this.#roomLimitsPending = false;
     }
     if (this.#countPush && from.boxId != null &&
         this.#presenceRecord.location().boxId !== from.boxId) {

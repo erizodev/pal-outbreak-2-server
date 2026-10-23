@@ -174,16 +174,19 @@ single-delta version awaits a player-count check. See
 The `udp9090 lobby-host-seat-on-query` event identifies the deferred record.
 
 `SNAP_ROOM_LIMITS_ON_QUERY` (default false) re-sends the op-0x10 sub-5
-"MAX / CURRENT P" room header after every in-room op-0x0a member query, with
-the current count taken from presence. The header is absolute
-(`FUN_005bc0e0` writes `0x6ff2b4`/`0x6ff2b3`), so repeats cannot accumulate
-the way the op-06 JOIN delta does; it is applied only in-room and `0x6ff2b4`
-is zeroed on every screen rebuild, so the create-time push can be lost. Owner
-run 2026-10-22 (Docker, `main`): "1 of 0" solo, "3 of 0" with two players.
-Expected with the flag: "1 of 4" / "2 of 4". UNVALIDATED on a console - the
-"0" maximum is the direct target; whether the "3" is read from this header or
-from the accumulated `0x6cfb62` is what the run decides. Log event:
-`udp9090 lobby-room-limits-on-query`. Rollback = unset.
+"MAX / CURRENT P" room header ONCE, after the creator's first in-room op-0x0a
+member query, with the current count taken from presence. `FUN_005bc0e0`
+writes `0x6ff2b4`/`0x6ff2b3` only in-room and `0x6ff2b4` is zeroed on every
+screen rebuild, so the create-time push can be lost. Owner run 2026-10-22
+(Docker, `main`): "1 of 0" solo, "3 of 0" with two players.
+
+NEVER PER POLL - rig-proven 2026-10-22. The first version re-sent the header
+on every in-room op-0x0a; solo kept working but the joiner saw the room and
+could not join, and removing the flag restored joining. `0x6ff2b3` is also the
+host start SM's accepted-member count, which the per-poll header overwrote
+during the accept handshake. The one-shot version is UNVALIDATED on a console:
+expected "1 of 4" solo and joining intact. Log event:
+`udp9090 lobby-room-limits-on-query` (once per created room). Rollback = unset.
 
 ### `PAL_V2_DYNAMIC_DNAS_TOKEN` - an experiment, off by default
 
