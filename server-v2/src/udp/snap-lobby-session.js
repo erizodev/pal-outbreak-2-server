@@ -268,6 +268,7 @@ export class SnapLobbySession {
   #memberIdToken;
   #rosterToJoiner;
   #hostReseat;
+  #roomLimitsOnQuery;
   #countPush;
   #pushAreaCount;
   #roomLifecycle;
@@ -472,6 +473,8 @@ export class SnapLobbySession {
     rosterToJoiner = false,
     /* SNAP_HOST_RESEAT: repair the host seat on its first room query and on peer join. */
     hostReseat = false,
+    /* SNAP_ROOM_LIMITS_ON_QUERY: re-send the MAX / CURRENT header on each in-room op-0a. */
+    roomLimitsOnQuery = false,
     /*
      * RS1-C C2, flag `SNAP_COUNT_PUSH` (config default ON; class default OFF):
      * the lobby-header count is latched from ONE op-0x09 USER answer at entry
@@ -682,6 +685,7 @@ export class SnapLobbySession {
     this.#memberIdToken = memberIdToken === true;
     this.#rosterToJoiner = rosterToJoiner === true;
     this.#hostReseat = hostReseat === true;
+    this.#roomLimitsOnQuery = roomLimitsOnQuery === true;
     this.#countPush = countPush === true;
     this.#pushAreaCount = pushAreaCount;
     this.#appKeepalive = appKeepalive === true;
@@ -2248,7 +2252,10 @@ export class SnapLobbySession {
         flags: FLAG_SET,
         event: 'member-list'
       });
-      if (answered) this.#reseatHostOnMemberQuery(room);
+      if (answered) {
+        this.#reseatHostOnMemberQuery(room);
+        this.#refreshRoomLimitsOnMemberQuery(room);
+      }
       this.#logger?.info?.('udp9090 lobby-member-list', {
         routingKey: this.#routingKey,
         loginIdentity: this.#loginIdentity,
@@ -2268,7 +2275,10 @@ export class SnapLobbySession {
       payload: buildMemberListPayload({ handleBytes: request.handleBytes, members }),
       event: 'member-list'
     });
-    if (answered) this.#reseatHostOnMemberQuery(room);
+    if (answered) {
+      this.#reseatHostOnMemberQuery(room);
+      this.#refreshRoomLimitsOnMemberQuery(room);
+    }
     this.#logger?.info?.('udp9090 lobby-member-list', {
       routingKey: this.#routingKey,
       loginIdentity: this.#loginIdentity,
@@ -2301,6 +2311,42 @@ export class SnapLobbySession {
       loginIdentity: this.#loginIdentity,
       roomHandle: `0x${room.handle.toString(16)}`,
       note: 'SNAP_HOST_RESEAT: one deferred host member record after its first in-room member query'
+    });
+  }
+
+  /**
+   * Re-assert the op-0x10 sub-5 "MAX / CURRENT P" header (SNAP_ROOM_LIMITS_ON_QUERY).
+   *
+   * The header is ABSOLUTE - FUN_005bc0e0 copies max/current straight into
+   * 0x6ff2b4/0x6ff2b3 - so repeating it cannot accumulate the way the op-06
+   * JOIN delta does. It is only taken while 0x6ff2b1 says in-room, and the
+   * client zeroes 0x6ff2b4 on every screen rebuild; the create-time push lands
+   * while the creator is still on screen 3, which fits the "1 of 0" / "3 of 0"
+   * the owner saw on 2026-10-22. FUN_005fe500 sets screen 4 BEFORE sending this
+   * op-0a, so a header sent here arrives after the rebuild, in-room. Counts come
+   * from presence, never from a counter, so the value is always the live one.
+   * Only for a session actually IN the queried room - a joiner's selection query
+   * from the room list gets nothing extra.
+   */
+  #refreshRoomLimitsOnMemberQuery(room) {
+    if (!this.#roomLimitsOnQuery || room == null ||
+        this.#presenceRecord.location().roomHandle !== room.handle) return;
+    const current = this.#presence.countInRoom(room.handle);
+    const sent = this.#send({
+      opcode: LOBBY_OPCODE.ROOM_STATE,
+      subSelector: 0,
+      payload: buildRoomLimitsPayload({ max: room.max, current }),
+      flags: FLAG_SET,
+      event: 'member-query-room-limits'
+    });
+    this.#logger?.info?.('udp9090 lobby-room-limits-on-query', {
+      routingKey: this.#routingKey,
+      loginIdentity: this.#loginIdentity,
+      roomHandle: `0x${room.handle.toString(16)}`,
+      max: room.max,
+      current,
+      sent,
+      note: 'SNAP_ROOM_LIMITS_ON_QUERY: absolute sub-5 header re-asserted after the screen-4 rebuild'
     });
   }
 

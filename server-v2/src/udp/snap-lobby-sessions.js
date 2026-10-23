@@ -110,6 +110,7 @@ export class SnapLobbySessions {
   #memberIdToken;
   #rosterToJoiner;
   #hostReseat;
+  #roomLimitsOnQuery;
   #countPush;
   #appKeepalive;
   #rooms;
@@ -190,6 +191,8 @@ export class SnapLobbySessions {
     memberIdToken = false,
     rosterToJoiner = false,
     hostReseat = false,
+    /* SNAP_ROOM_LIMITS_ON_QUERY: re-send the room header on each in-room member query. */
+    roomLimitsOnQuery = false,
     /*
      * PORT-PLAN slices 1b/2a/2b. Table defaults OFF like every other flag here;
      * the composed config (`SNAP_JOIN_LADDER`, `SNAP_OP10_RELAY`) turns the
@@ -345,6 +348,7 @@ export class SnapLobbySessions {
     this.#memberIdToken = memberIdToken === true;
     this.#rosterToJoiner = rosterToJoiner === true;
     this.#hostReseat = hostReseat === true;
+    this.#roomLimitsOnQuery = roomLimitsOnQuery === true;
     this.#exitCloseMirror = exitCloseMirror === true;
     this.#completionSeqEcho = completionSeqEcho === true;
     this.#channelBitEcho = channelBitEcho === true;
@@ -876,6 +880,7 @@ export class SnapLobbySessions {
         memberIdToken: this.#memberIdToken,
         rosterToJoiner: this.#rosterToJoiner,
         hostReseat: this.#hostReseat,
+        roomLimitsOnQuery: this.#roomLimitsOnQuery,
         relayGameChannel: (from, payload) => this.#relayGameChannel(from, payload),
         relayProperty: (from, payload) => this.#relayProperty(from, payload),
         propertyRelay: this.#propertyRelay,

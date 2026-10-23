@@ -790,6 +790,7 @@ export function createApplication({ config, logger, repositories = null }) {
       memberIdToken: config.snapLobby?.memberIdToken === true,
       rosterToJoiner: config.snapLobby?.rosterToJoiner === true,
       hostReseat: config.snapLobby?.hostReseat === true,
+      roomLimitsOnQuery: config.snapLobby?.roomLimitsOnQuery === true,
       joinLadder: config.snapLobby?.joinLadder === true,
       op10Relay: config.snapLobby?.op10Relay === true,
       op10DropSelf: config.snapLobby?.op10DropSelf === true,

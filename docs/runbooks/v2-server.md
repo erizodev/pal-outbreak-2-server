@@ -173,6 +173,18 @@ single-delta version awaits a player-count check. See
 [`pcsx2-solo-zero-peers-2026-10-17.md`](../../analysis/pcsx2-solo-zero-peers-2026-10-17.md).
 The `udp9090 lobby-host-seat-on-query` event identifies the deferred record.
 
+`SNAP_ROOM_LIMITS_ON_QUERY` (default false) re-sends the op-0x10 sub-5
+"MAX / CURRENT P" room header after every in-room op-0x0a member query, with
+the current count taken from presence. The header is absolute
+(`FUN_005bc0e0` writes `0x6ff2b4`/`0x6ff2b3`), so repeats cannot accumulate
+the way the op-06 JOIN delta does; it is applied only in-room and `0x6ff2b4`
+is zeroed on every screen rebuild, so the create-time push can be lost. Owner
+run 2026-10-22 (Docker, `main`): "1 of 0" solo, "3 of 0" with two players.
+Expected with the flag: "1 of 4" / "2 of 4". UNVALIDATED on a console - the
+"0" maximum is the direct target; whether the "3" is read from this header or
+from the accumulated `0x6cfb62` is what the run decides. Log event:
+`udp9090 lobby-room-limits-on-query`. Rollback = unset.
+
 ### `PAL_V2_DYNAMIC_DNAS_TOKEN` - an experiment, off by default
 
 V2 replays canned DNAS replies, and one record in them carries the 32-byte
